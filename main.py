@@ -5,78 +5,90 @@ from bs4 import BeautifulSoup
 import google.generativeai as genai
 import tweepy
 import urllib.parse
+import time
 
-# --- FUNGSI UNTUK SCRAPING (TELAH DIPERBAIKI TOTAL) ---
-def scrape_trends_from_trends24():
+# Import Selenium
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.chrome.service import Service as ChromeService
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.common.exceptions import TimeoutException
+
+# --- FUNGSI UNTUK SCRAPING (DIROMBAK TOTAL MENGGUNAKAN SELENIUM) ---
+def scrape_trends_with_selenium():
     """
-    Mengambil tren dari trends24.in untuk United States.
-    Fungsi ini telah diperbarui dengan selector yang benar dan penanganan error yang lebih baik.
+    Mengambil tren dari trends24.in menggunakan Selenium untuk menangani JavaScript.
+    Fungsi ini dirancang untuk berjalan di lingkungan server seperti GitHub Actions.
     """
-    url = "https://trends24.in/united-states/"
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
+    print("Memulai proses scraping dengan Selenium...")
     
-    print("Mencoba mengambil tren dari trends24.in...")
-    
+    # Konfigurasi opsi untuk Chrome agar berjalan di server (headless)
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--headless") # Berjalan tanpa membuka jendela browser
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
+    driver = None
     try:
-        response = requests.get(url, headers=headers, timeout=15)
-        response.raise_for_status()
-        response.encoding = 'utf-8' # Memastikan encoding benar untuk karakter spesial
+        # Menginstal dan mengelola driver Chrome secara otomatis
+        service = ChromeService(ChromeDriverManager().install())
+        driver = webdriver.Chrome(service=service, options=chrome_options)
         
-        soup = BeautifulSoup(response.text, 'html.parser')
+        url = "https://trends24.in/united-states/"
+        print(f"Membuka URL: {url}")
+        driver.get(url)
         
-        # ---SELECTOR YANG BENAR---
-        # Mencari semua elemen 'li' di dalam 'ol' dengan kelas 'trend-list'
+        # MENUNGGU HINGGA ELEMEN SPESIFIK MUNCUL (KUNCI UTAMA)
+        # Kita tunggu hingga elemen 'ol' dengan class 'trend-list' dimuat, maksimal 20 detik.
+        print("Menunggu konten dinamis (JavaScript) selesai dimuat...")
+        wait = WebDriverWait(driver, 20)
+        wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "ol.trend-list li a")))
+        print("Konten berhasil dimuat.")
+
+        # Setelah konten dimuat, ambil source HTML halamannya
+        page_source = driver.page_source
+        soup = BeautifulSoup(page_source, 'html.parser')
+        
+        # Selector tetap sama, tapi sekarang diaplikasikan ke HTML yang sudah dirender
         trend_elements = soup.select('ol.trend-list li a')
         
-        # Jika selector utama gagal, coba selector cadangan
-        if not trend_elements:
-            print("Selector utama tidak menemukan apa pun. Mencoba selector cadangan...")
-            trend_elements = soup.select('div.trend-card li a')
+        trends = [trend.get_text(strip=True).replace('#', '') for trend in trend_elements[:4]]
+        
+        if not trends or len(trends) < 4:
+            print(f"❌ Peringatan: Hanya ditemukan {len(trends)} tren. Mungkin ada sedikit perubahan pada situs.")
+            if not trends: return None # Jika benar-benar kosong, gagal.
+        
+        print(f"✅ Tren berhasil diambil: {trends}")
+        return trends
 
-        # Memproses teks dari elemen yang ditemukan
-        trends = [trend.get_text(strip=True) for trend in trend_elements]
-        
-        if not trends:
-            print("❌ Error: Tidak ada tren yang bisa diambil. Struktur website kemungkinan besar telah berubah total.")
-            return None
-        
-        # Mengambil 4 tren teratas dan memastikan tidak ada duplikat atau entri kosong
-        final_trends = []
-        for trend in trends:
-            if trend and trend not in final_trends:
-                # Menghapus karakter '#' jika ada agar konsisten
-                final_trends.append(trend.replace('#', ''))
-            if len(final_trends) == 4:
-                break
-        
-        print(f"✅ Tren berhasil ditemukan: {final_trends}")
-        return final_trends
-
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Error kritis saat mengakses trends24.in: {e}")
+    except TimeoutException:
+        print("❌ Error Kritis: Waktu tunggu habis. Elemen tren tidak ditemukan di halaman.")
+        print("Ini berarti struktur HTML situs telah berubah. Selector CSS perlu diperbarui.")
         return None
     except Exception as e:
-        print(f"❌ Terjadi error tak terduga saat scraping: {e}")
+        print(f"❌ Terjadi error tak terduga saat proses Selenium: {e}")
         return None
+    finally:
+        if driver:
+            print("Menutup driver Selenium.")
+            driver.quit()
 
-# --- FUNGSI UNTUK GENERASI KONTEN (TETAP SAMA) ---
+# --- FUNGSI GENERASI KONTEN (TIDAK BERUBAH) ---
 def generate_post_with_gemini(trend, link):
-    """Membuat konten post dengan Gemini API berdasarkan satu tren, menyertakan CTA dan link."""
     gemini_api_key = os.getenv('GEMINI_API_KEY')
     if not gemini_api_key:
         raise ValueError("GEMINI_API_KEY tidak ditemukan di environment variables!")
-        
     genai.configure(api_key=gemini_api_key)
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
-    
     prompt = (
         f"You are a social media expert creating a post for X.com. "
         f"Write a short, engaging post in English about this topic: '{trend}'. The post MUST include a strong Call to Action {link}"
         f"Do NOT add any hashtags in your response. Just provide the main text with the CTA and the link."
     )
-    
     try:
         response = model.generate_content(prompt)
         print("Konten berhasil dibuat oleh Gemini.")
@@ -85,9 +97,8 @@ def generate_post_with_gemini(trend, link):
         print(f"Error saat menghubungi Gemini API: {e}")
         return None
 
-# --- FUNGSI UNTUK MENDAPATKAN LINK (TETAP SAMA) ---
+# --- FUNGSI GET LINK (TIDAK BERUBAH) ---
 def get_random_link(filename="links.txt"):
-    """Membaca file dan memilih satu link secara acak."""
     try:
         with open(filename, 'r') as f:
             links = [line.strip() for line in f if line.strip()]
@@ -96,35 +107,9 @@ def get_random_link(filename="links.txt"):
         print(f"Error: File '{filename}' tidak ditemukan.")
         return None
 
-# --- FUNGSI UNTUK POSTING KE X.COM (TETAP SAMA) ---
+# --- FUNGSI POST KE X (TIDAK BERUBAH) ---
 def post_to_x(text_to_post, image_url=None):
-    """Memposting teks dan gambar (opsional) ke X.com."""
     try:
-        media_ids = []
-        if image_url:
-            # Untuk upload media, kita perlu menggunakan API v1.1 dari Tweepy
-            auth = tweepy.OAuth1UserHandler(
-                os.getenv('X_API_KEY'), os.getenv('X_API_SECRET'),
-                os.getenv('X_ACCESS_TOKEN'), os.getenv('X_ACCESS_TOKEN_SECRET')
-            )
-            api = tweepy.API(auth)
-            
-            # Download gambar dari URL
-            filename = 'temp_image.jpg'
-            response = requests.get(image_url, stream=True)
-            if response.status_code == 200:
-                with open(filename, 'wb') as image_file:
-                    for chunk in response.iter_content(1024):
-                        image_file.write(chunk)
-                
-                # Upload gambar ke Twitter untuk mendapatkan media_id
-                media = api.media_upload(filename=filename)
-                media_ids.append(media.media_id_string)
-                print("Gambar berhasil di-upload.")
-            else:
-                print(f"Gagal mengunduh gambar. Status code: {response.status_code}")
-
-        # Gunakan Client API v2 untuk memposting tweet
         client = tweepy.Client(
             bearer_token=os.getenv('X_BEARER_TOKEN'),
             consumer_key=os.getenv('X_API_KEY'),
@@ -132,57 +117,50 @@ def post_to_x(text_to_post, image_url=None):
             access_token=os.getenv('X_ACCESS_TOKEN'),
             access_token_secret=os.getenv('X_ACCESS_TOKEN_SECRET')
         )
-        
-        # Buat tweet dengan atau tanpa media
-        if media_ids:
-            response = client.create_tweet(text=text_to_post, media_ids=media_ids)
-        else:
-            response = client.create_tweet(text=text_to_post)
-            
+        media_ids = []
+        if image_url:
+            auth_v1 = tweepy.OAuth1UserHandler(
+                os.getenv('X_API_KEY'), os.getenv('X_API_SECRET'),
+                os.getenv('X_ACCESS_TOKEN'), os.getenv('X_ACCESS_TOKEN_SECRET')
+            )
+            api_v1 = tweepy.API(auth_v1)
+            filename = 'temp_image.jpg'
+            response = requests.get(image_url, stream=True)
+            if response.status_code == 200:
+                with open(filename, 'wb') as image_file:
+                    for chunk in response.iter_content(1024):
+                        image_file.write(chunk)
+                media = api_v1.media_upload(filename=filename)
+                media_ids.append(media.media_id_string)
+                print("Gambar berhasil di-upload.")
+            else:
+                print(f"Gagal mengunduh gambar. Status code: {response.status_code}")
+        response = client.create_tweet(text=text_to_post, media_ids=media_ids if media_ids else None)
         print(f"Berhasil memposting tweet ID: {response.data['id']}")
-        
     except Exception as e:
         print(f"Error saat memposting ke X.com: {e}")
 
-# --- FUNGSI UTAMA (TETAP SAMA) ---
+# --- FUNGSI UTAMA ---
 if __name__ == "__main__":
     print("Memulai proses auto-posting...")
-    
-    top_trends = scrape_trends_from_trends24()
-    
+    top_trends = scrape_trends_with_selenium()
     if top_trends:
-        # Memilih satu tren secara acak untuk dijadikan konten
         selected_trend = random.choice(top_trends)
         print(f"Tren yang dipilih untuk konten: {selected_trend}")
-        
         random_link = get_random_link()
-        
         if random_link:
-            # Membuat konten (teks) berdasarkan tren yang dipilih
             gemini_text = generate_post_with_gemini(selected_trend, random_link)
-            
             if gemini_text:
                 print(f"Teks dari Gemini: {gemini_text}")
-
-                # Membuat string hashtag dari SEMUA tren yang ditemukan
-                # untuk jangkauan yang lebih luas
                 hashtags_string = " ".join([f"#{trend.replace(' ', '')}" for trend in top_trends])
                 print(f"Hashtag yang dibuat (dari 4 tren): {hashtags_string}")
-                
-                # Membuat URL gambar dari tren yang dipilih untuk konten
                 image_url = f"https://tse1.mm.bing.net/th?q={urllib.parse.quote(selected_trend)}"
                 print(f"URL Gambar: {image_url}")
-
-                # Menggabungkan teks AI dan semua hashtag
                 final_post = f"{gemini_text}\n\n{hashtags_string}"
-                
                 print("--- POSTINGAN FINAL ---")
                 print(final_post)
                 print("-----------------------")
-                
-                # Posting ke X.com dengan gambar
                 post_to_x(final_post, image_url)
     else:
         print("Proses auto-posting berhenti karena tidak ada tren yang berhasil didapatkan.")
-
     print("Proses selesai.")
