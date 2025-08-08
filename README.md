@@ -8,7 +8,7 @@ file di bawah
 
 ## Link API
 
-1. Gemini API : https://aistudio.google.com/apikey
+1. Gemini API : https://aistudio.google.com/apikey or https://console.cloud.google.com/cloud-resource-manager?pli=1&inv=1&invt=Ab2jrA
 2. x.com API : https://developer.x.com/en/portal/dashboard
 
 ## Konfigurasi GitHub Secrets
