@@ -1,37 +1,63 @@
-name: Automatic Post to X.com
+# Nama workflow yang akan muncul di tab "Actions"
+name: Auto Post to X
 
+# Pemicu workflow
 on:
+  # 1. 'workflow_dispatch' memungkinkan Anda menjalankan workflow ini secara manual 
+  #    dari tab "Actions" di GitHub.
+  workflow_dispatch:
+  
+  # 2. 'schedule' menjalankan workflow secara otomatis
   schedule:
-    # Menjalankan setiap jam antara jam 9 pagi dan 3 sore (15:00) UTC setiap hari.
-    # GitHub Actions akan memilih salah satu waktu ini secara acak untuk menjalankan job.
-    - cron: '0 9-15 * * *'
-  workflow_dispatch: # Tombol untuk menjalankan manual
+    # Menjalankan pada pukul 14:00 UTC setiap hari.
+    # 14:00 UTC = 21:00 WIB (Jam 9 malam)
+    # Ini sesuai dengan permintaan Anda (antara 19:00 - 23:00 WIB).
+    - cron: '0 14 * * *'
 
+# Daftar pekerjaan (jobs) yang akan dijalankan
 jobs:
-  build:
+  # Satu-satunya pekerjaan yang kita miliki bernama 'post'
+  post:
+    # REKOMENDASI PENTING: Menambahkan 'permissions'
+    # Ini memberikan GITHUB_TOKEN izin untuk MEMBACA isi repositori.
+    # Script 'main.py' yang diperbarui akan menggunakan token ini
+    # untuk mengakses API GitHub secara terotentikasi saat mengambil URL gambar,
+    # sehingga menghindari "rate limit" (penyebab error).
+    permissions:
+      contents: read
+
+    # Menjalankan di server Ubuntu terbaru
     runs-on: ubuntu-latest
 
+    # Langkah-langkah yang akan dieksekusi
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      # 1. Mengunduh (checkout) kode dari repositori Anda
+      - name: Check out repository
+        uses: actions/checkout@v4
 
+      # 2. Menyiapkan lingkungan Python
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10' # Sesuaikan versi Python jika perlu
+          python-version: '3.10' # Anda bisa ganti versi jika perlu
 
+      # 3. Menginstal dependensi (dari requirements.txt)
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Run the autopost script
+          
+      # 4. Menjalankan script Python Anda
+      - name: Run Auto Post Script
         env:
-          # Mengambil semua kunci API dari GitHub Secrets
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          # Mengambil semua 'secrets' yang telah Anda simpan di Pengaturan GitHub
+          # dan memberikannya ke script Python sebagai environment variables
           X_API_KEY: ${{ secrets.X_API_KEY }}
           X_API_SECRET: ${{ secrets.X_API_SECRET }}
           X_BEARER_TOKEN: ${{ secrets.X_BEARER_TOKEN }}
           X_ACCESS_TOKEN: ${{ secrets.X_ACCESS_TOKEN }}
           X_ACCESS_TOKEN_SECRET: ${{ secrets.X_ACCESS_TOKEN_SECRET }}
+          
+          # Ini adalah token yang diizinkan oleh blok 'permissions' di atas
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python main.py
