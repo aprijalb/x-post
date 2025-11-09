@@ -4,12 +4,9 @@
 
 .github/workflows/autopost.yml
 
-file di bawah
+## API x.com
 
-## Link API
-
-1. Gemini API : https://aistudio.google.com/apikey or https://console.cloud.google.com/cloud-resource-manager?pli=1&inv=1&invt=Ab2jrA
-2. x.com API : https://developer.x.com/en/portal/dashboard
+Buat API di https://developer.x.com/en/portal/dashboard
 
 ## Konfigurasi GitHub Secrets
 
@@ -17,7 +14,6 @@ file di bawah
 2. Klik New repository secret untuk setiap kunci API.
 3. Buat secret dengan nama-nama berikut (sesuai yang ada di file .yml dan .py):
 
-        GEMINI_API_KEY
         X_API_KEY
         X_API_SECRET
         X_BEARER_TOKEN
